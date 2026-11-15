@@ -32,6 +32,7 @@ _LOGGER = logging.getLogger(__name__)
 REQUEST_TIMEOUT = 30.0
 PAGE_SIZE = 100
 MAX_CONCURRENT_COURSES = 5
+COURSE_INCLUDES = ["teachers", "term", "total_scores", "current_grading_period_scores"]
 
 
 class CanvasError(Exception):
@@ -81,6 +82,33 @@ class UnsubmittedAssignment:
         return asdict(self)
 
 
+@dataclass(frozen=True, slots=True)
+class Course:
+    """A course a student is actively enrolled in, with the student's grade."""
+
+    id: int
+    name: str
+    html_url: str | None
+    teachers: list[str]
+    score: float | None
+    grade: str | None
+    term: str | None
+    grading_period: str | None
+    start_at: str | None
+    end_at: str | None
+    # None when Canvas refused the course's assignments, so nothing was counted.
+    unsubmitted_count: int | None
+    missing_count: int | None
+
+
+@dataclass(frozen=True, slots=True)
+class StudentData:
+    """What one refresh read for one student."""
+
+    courses: list[Course]
+    assignments: list[UnsubmittedAssignment]
+
+
 def normalize_url(url: str) -> str:
     """Reduce a Canvas URL to scheme and host, assuming https when omitted."""
     url = url.strip()
@@ -128,6 +156,85 @@ def build_item(
     )
 
 
+def teacher_names(course: Any) -> list[str]:
+    """Return the names of a course's teachers, skipping entries without one.
+
+    The client does not type this field, so it is read defensively.
+    """
+    names: list[str] = []
+    for teacher in getattr(course, "teachers", None) or []:
+        if not isinstance(teacher, dict):
+            continue
+        name = teacher.get("display_name") or teacher.get("name")
+        if isinstance(name, str) and name:
+            names.append(name)
+    return names
+
+
+def student_enrollment(course: Any, student: CanvasUser) -> Any | None:
+    """Return the student's own student enrolment in a course, if listed."""
+    for enrollment in getattr(course, "enrollments", None) or []:
+        if enrollment.type == "student" and enrollment.user_id == student.id:
+            return enrollment
+    return None
+
+
+def current_grade(enrollment: Any | None) -> tuple[float | None, str | None]:
+    """Return the score and letter grade Canvas shows the student.
+
+    The current grading period's values are used when Canvas supplies them,
+    otherwise the whole course's. Both are empty when the course hides totals.
+    """
+    if enrollment is None:
+        return None, None
+    if enrollment.current_period_computed_current_score is not None:
+        return (
+            float(enrollment.current_period_computed_current_score),
+            enrollment.current_period_computed_current_grade or None,
+        )
+    if enrollment.computed_current_score is not None:
+        return (
+            float(enrollment.computed_current_score),
+            enrollment.computed_current_grade or None,
+        )
+    return None, None
+
+
+def build_course(
+    course: Any,
+    student: CanvasUser,
+    base_url: str,
+    items: list[UnsubmittedAssignment] | None,
+) -> Course:
+    """Build a course from the client's model and the items collected for it.
+
+    ``items`` is None when Canvas refused the course's assignments.
+    """
+    enrollment = student_enrollment(course, student)
+    score, grade = current_grade(enrollment)
+    term = getattr(course, "term", None)
+    return Course(
+        id=course.id,
+        name=course.name or str(course.id),
+        html_url=getattr(course, "html_url", None) or f"{base_url}/courses/{course.id}",
+        teachers=teacher_names(course),
+        score=score,
+        grade=grade,
+        term=(term.name or None) if term is not None else None,
+        grading_period=(
+            (enrollment.current_grading_period_title or None)
+            if enrollment is not None
+            else None
+        ),
+        start_at=_iso(getattr(course, "start_at", None)),
+        end_at=_iso(getattr(course, "end_at", None)),
+        unsubmitted_count=None if items is None else len(items),
+        missing_count=(
+            None if items is None else sum(1 for item in items if item.missing)
+        ),
+    )
+
+
 def sort_items(items: list[UnsubmittedAssignment]) -> list[UnsubmittedAssignment]:
     """Order by due date, earliest first, undated last, then by assignment id."""
     return sorted(
@@ -151,9 +258,10 @@ def _translate(err: Exception) -> CanvasError:
 class CanvasClient:
     """A Canvas API client for one URL and access token."""
 
-    def __init__(self, api_client: ApiClient) -> None:
-        """Wrap an already built client."""
+    def __init__(self, api_client: ApiClient, url: str) -> None:
+        """Wrap an already built client for a normalised Canvas URL."""
         self._api_client = api_client
+        self._url = url
         self._users = UsersApi(api_client)
         self._observees = UserObserveesApi(api_client)
         self._courses = CoursesApi(api_client)
@@ -172,7 +280,7 @@ class CanvasClient:
             return ApiClient(Configuration(host=url, access_token=token))
 
         loop = asyncio.get_running_loop()
-        return cls(await loop.run_in_executor(None, _build))
+        return cls(await loop.run_in_executor(None, _build), url)
 
     async def async_close(self) -> None:
         """Close the client's connections."""
@@ -203,33 +311,47 @@ class CanvasClient:
             raise _translate(err) from err
         return students or [account]
 
-    async def async_get_unsubmitted(
-        self, student: CanvasUser
-    ) -> list[UnsubmittedAssignment]:
-        """Return a student's unsubmitted assignments in their active courses."""
+    async def async_get_student_data(self, student: CanvasUser) -> StudentData:
+        """Return a student's active courses and their unsubmitted assignments.
+
+        The one course listing supplies the teachers, term and grades, so
+        course data costs no request beyond those the assignments need.
+        """
         try:
-            courses = [
+            listed = [
                 course
                 async for course in self._courses.courses_user_index_all(
                     user_id=str(student.id),
+                    include=COURSE_INCLUDES,
                     enrollment_state="active",
                     per_page=PAGE_SIZE,
                     _request_timeout=REQUEST_TIMEOUT,
                 )
             ]
             per_course = await asyncio.gather(
-                *(self._async_course_items(course, student) for course in courses)
+                *(self._async_course_items(course, student) for course in listed)
             )
         except CanvasError:
             raise
         except Exception as err:
             raise _translate(err) from err
-        return sort_items([item for items in per_course for item in items])
+        return StudentData(
+            courses=[
+                build_course(course, student, self._url, items)
+                for course, items in zip(listed, per_course, strict=True)
+            ],
+            assignments=sort_items(
+                [item for items in per_course for item in items or []]
+            ),
+        )
 
     async def _async_course_items(
         self, course: Any, student: CanvasUser
-    ) -> list[UnsubmittedAssignment]:
-        """Return a student's unsubmitted assignments in one course."""
+    ) -> list[UnsubmittedAssignment] | None:
+        """Return a student's unsubmitted assignments in one course.
+
+        Returns None when Canvas refuses the course.
+        """
         items: dict[int, UnsubmittedAssignment] = {}
         async with self._semaphore:
             try:
@@ -253,7 +375,7 @@ class CanvasClient:
                     course.id,
                     student.id,
                 )
-                return []
+                return None
         return list(items.values())
 
 

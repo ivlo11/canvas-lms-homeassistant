@@ -21,6 +21,7 @@ from custom_components.canvas_lms_edu.api import (
     CanvasUser,
     InvalidUrl,
     async_validate,
+    build_course,
     build_item,
     host_from_url,
     normalize_url,
@@ -36,7 +37,9 @@ from .conftest import (
     URL,
     FakeCanvas,
     course,
+    enrollment,
     submission,
+    teacher,
 )
 
 ALICE_USER = CanvasUser(id=ALICE["id"], name=ALICE["name"])
@@ -190,7 +193,7 @@ def test_item_with_empty_due_date_and_points() -> None:
 async def test_collects_from_every_active_course(canvas: FakeCanvas) -> None:
     """Unsubmitted work in several courses is all collected, with class names."""
     client = await CanvasClient.async_create(URL, PARENT_TOKEN)
-    items = await client.async_get_unsubmitted(ALICE_USER)
+    items = (await client.async_get_student_data(ALICE_USER)).assignments
     assert {(i.course_name, i.assignment_id) for i in items} == {
         ("Algebra", 1),
         ("Algebra", 2),
@@ -216,7 +219,7 @@ async def test_collects_every_page_without_duplicates(canvas: FakeCanvas) -> Non
     canvas.courses[ALICE["id"]] = [course(101, "Algebra")]
     canvas.submissions[(101, ALICE["id"])] = [*rows, rows[99], rows[199]]
     client = await CanvasClient.async_create(URL, ALICE_TOKEN)
-    items = await client.async_get_unsubmitted(ALICE_USER)
+    items = (await client.async_get_student_data(ALICE_USER)).assignments
     assert len(items) == 250
     assert len({i.assignment_id for i in items}) == 250
 
@@ -226,7 +229,7 @@ async def test_concluded_course_is_excluded(canvas: FakeCanvas) -> None:
     canvas.concluded_courses[ALICE["id"]] = [course(90, "Last year's Algebra")]
     canvas.submissions[(90, ALICE["id"])] = [submission(900, course_id=90)]
     client = await CanvasClient.async_create(URL, ALICE_TOKEN)
-    items = await client.async_get_unsubmitted(ALICE_USER)
+    items = (await client.async_get_student_data(ALICE_USER)).assignments
     assert 900 not in {i.assignment_id for i in items}
     assert 90 not in {i.course_id for i in items}
 
@@ -234,13 +237,13 @@ async def test_concluded_course_is_excluded(canvas: FakeCanvas) -> None:
 async def test_student_with_no_courses(canvas: FakeCanvas) -> None:
     """A student with no active courses has nothing outstanding."""
     client = await CanvasClient.async_create(URL, PARENT_TOKEN)
-    assert await client.async_get_unsubmitted(BOB_USER) == []
+    assert (await client.async_get_student_data(BOB_USER)).assignments == []
 
 
 async def test_ordered_by_due_date_with_undated_last(canvas: FakeCanvas) -> None:
     """Past-due first, then upcoming, then undated."""
     client = await CanvasClient.async_create(URL, ALICE_TOKEN)
-    items = await client.async_get_unsubmitted(ALICE_USER)
+    items = (await client.async_get_student_data(ALICE_USER)).assignments
     assert [(i.assignment_id, i.due_at) for i in items] == [
         (2, "2026-11-01T23:59:00+00:00"),
         (4, "2026-11-10T12:00:00+00:00"),
@@ -267,7 +270,7 @@ async def test_forbidden_course_is_skipped(
     canvas.forbidden_courses.add(101)
     caplog.set_level(logging.DEBUG)
     client = await CanvasClient.async_create(URL, ALICE_TOKEN)
-    items = await client.async_get_unsubmitted(ALICE_USER)
+    items = (await client.async_get_student_data(ALICE_USER)).assignments
     assert {i.assignment_id for i in items} == {3, 4, 5}
     skips = [r for r in caplog.records if "refused access to course 101" in r.message]
     assert len(skips) == 1
@@ -280,7 +283,7 @@ async def test_submission_without_assignment_is_ignored(canvas: FakeCanvas) -> N
     del bare["assignment"]
     canvas.submissions[(101, ALICE["id"])].append(bare)
     client = await CanvasClient.async_create(URL, ALICE_TOKEN)
-    items = await client.async_get_unsubmitted(ALICE_USER)
+    items = (await client.async_get_student_data(ALICE_USER)).assignments
     assert 6 not in {i.assignment_id for i in items}
 
 
@@ -299,7 +302,7 @@ async def test_collection_failures(
     client = await CanvasClient.async_create(URL, ALICE_TOKEN)
     canvas.error = error
     with pytest.raises(expected):
-        await client.async_get_unsubmitted(ALICE_USER)
+        await client.async_get_student_data(ALICE_USER)
 
 
 async def test_only_read_requests_are_made(canvas: FakeCanvas) -> None:
@@ -307,10 +310,174 @@ async def test_only_read_requests_are_made(canvas: FakeCanvas) -> None:
     client = await CanvasClient.async_create(URL, PARENT_TOKEN)
     account = await client.async_get_account()
     for student in await client.async_get_students(account):
-        await client.async_get_unsubmitted(student)
+        await client.async_get_student_data(student)
     assert {name for name, _ in canvas.calls} == {
         "users_api_show",
         "user_observees_index_all",
         "courses_user_index_all",
         "submissions_api_for_students_all",
     }
+
+
+def _course(data: dict, items: list | None = None):
+    """Build Alice's course from a Canvas course dict."""
+    return build_course(Course.from_dict(data), ALICE_USER, URL, items or [])
+
+
+@pytest.mark.parametrize(
+    ("teachers", "names"),
+    [
+        ([teacher("Ms Rivera")], ["Ms Rivera"]),
+        ([teacher("Ms Rivera"), teacher("Mr Okafor", 901)], ["Ms Rivera", "Mr Okafor"]),
+        ([], []),
+        (None, []),
+        ([{"id": 5, "name": "Dr Fallback"}], ["Dr Fallback"]),
+        ([{"id": 5}, teacher("Ms Rivera")], ["Ms Rivera"]),
+    ],
+)
+def test_course_teachers(teachers: list | None, names: list[str]) -> None:
+    """Teacher names are read from display_name, then name, else skipped."""
+    built = _course(course(101, "Algebra", teachers=teachers))
+    assert built.id == 101
+    assert built.name == "Algebra"
+    assert built.teachers == names
+
+
+def test_course_prefers_current_period_grade() -> None:
+    """With both sources, the current grading period's score and grade win."""
+    built = _course(
+        course(
+            101,
+            "Algebra",
+            enrollments=[
+                enrollment(
+                    21,
+                    score=85.0,
+                    grade="B",
+                    period_score=91.5,
+                    period_grade="A-",
+                    period_title="Quarter 2",
+                )
+            ],
+        )
+    )
+    assert (built.score, built.grade) == (91.5, "A-")
+    assert built.grading_period == "Quarter 2"
+
+
+def test_course_whole_course_grade_only() -> None:
+    """Without grading periods, the whole-course score and grade are used."""
+    built = _course(
+        course(101, "Algebra", enrollments=[enrollment(21, score=88, grade="B+")])
+    )
+    assert (built.score, built.grade) == (88.0, "B+")
+    assert built.grading_period is None
+
+
+def test_course_score_without_letter_grade() -> None:
+    """A score with no letter grade is carried with an empty grade."""
+    built = _course(course(101, "Algebra", enrollments=[enrollment(21, score=72.25)]))
+    assert (built.score, built.grade) == (72.25, None)
+
+
+def test_course_with_hidden_totals() -> None:
+    """Canvas omits scores when the course hides totals; both are empty."""
+    built = _course(course(101, "Algebra", enrollments=[enrollment(21)]))
+    assert (built.score, built.grade) == (None, None)
+
+
+def test_course_uses_the_students_own_student_enrolment() -> None:
+    """Another user's enrolment, or a non-student one, is not the student's."""
+    built = _course(
+        course(
+            101,
+            "Algebra",
+            enrollments=[
+                enrollment(22, score=50.0, grade="F"),
+                enrollment(21, kind="observer", score=10.0),
+                enrollment(21, score=93.0, grade="A"),
+            ],
+        )
+    )
+    assert (built.score, built.grade) == (93.0, "A")
+    assert _course(course(101, "Algebra")).score is None
+
+
+def test_course_link_term_period_and_dates() -> None:
+    """The link, term, grading period and dates are carried as Canvas sends them."""
+    built = _course(
+        course(
+            101,
+            "Algebra",
+            term="Fall 2026",
+            start_at="2026-08-20T08:00:00-06:00",
+            end_at="2026-12-18T00:00:00Z",
+            html_url="https://canvas.example.edu/courses/101",
+            enrollments=[enrollment(21, period_score=90.0, period_title="Quarter 2")],
+        )
+    )
+    assert built.html_url == "https://canvas.example.edu/courses/101"
+    assert built.term == "Fall 2026"
+    assert built.grading_period == "Quarter 2"
+    assert built.start_at == "2026-08-20T14:00:00+00:00"
+    assert built.end_at == "2026-12-18T00:00:00+00:00"
+
+
+def test_course_without_term_period_or_dates() -> None:
+    """Missing term, grading period and dates are empty; the link is derived."""
+    built = _course(course(101, "Algebra", enrollments=[enrollment(21, score=90.0)]))
+    assert built.term is None
+    assert built.grading_period is None
+    assert built.start_at is None
+    assert built.end_at is None
+    assert built.html_url == f"{URL}/courses/101"
+
+
+async def test_course_listing_asks_for_teachers_term_and_scores(
+    canvas: FakeCanvas,
+) -> None:
+    """Courses and assignments come from one method and the same requests."""
+    client = await CanvasClient.async_create(URL, PARENT_TOKEN)
+    data = await client.async_get_student_data(ALICE_USER)
+    assert [c.name for c in data.courses] == ["Algebra", "Biology"]
+    assert len(data.assignments) == 5
+    names = [name for name, _ in canvas.calls]
+    # One listing plus one submissions request per course, as before courses.
+    assert names.count("courses_user_index_all") == 1
+    assert names.count("submissions_api_for_students_all") == 2
+    assert len(names) == 3
+    (listing,) = [kw for name, kw in canvas.calls if name == "courses_user_index_all"]
+    assert listing["include"] == [
+        "teachers",
+        "term",
+        "total_scores",
+        "current_grading_period_scores",
+    ]
+
+
+async def test_requests_for_five_courses(canvas: FakeCanvas) -> None:
+    """Five active courses cost one listing and five submission requests."""
+    canvas.courses[ALICE["id"]] = [course(100 + n, f"Course {n}") for n in range(5)]
+    client = await CanvasClient.async_create(URL, ALICE_TOKEN)
+    data = await client.async_get_student_data(ALICE_USER)
+    assert len(data.courses) == 5
+    assert len(canvas.calls) == 6
+
+
+async def test_course_counts(canvas: FakeCanvas) -> None:
+    """Counts come from the assignments collected for the student and course."""
+    canvas.courses[ALICE["id"]] = [
+        course(101, "Algebra"),
+        course(102, "Biology"),
+        course(103, "Chemistry"),
+    ]
+    canvas.submissions[(101, ALICE["id"])] = [
+        submission(n, missing=n <= 2) for n in range(1, 6)
+    ]
+    canvas.submissions[(102, ALICE["id"])] = []
+    canvas.forbidden_courses.add(103)
+    client = await CanvasClient.async_create(URL, ALICE_TOKEN)
+    data = await client.async_get_student_data(ALICE_USER)
+    counts = {c.name: (c.unsubmitted_count, c.missing_count) for c in data.courses}
+    assert counts == {"Algebra": (5, 2), "Biology": (0, 0), "Chemistry": (None, None)}
+    assert len(data.assignments) == 5

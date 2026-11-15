@@ -34,7 +34,7 @@ rules:
   # Gold (named follow-ups)
   dynamic-devices:
     status: todo
-    comment: Follow-up change. A newly linked observee is only picked up when the entry is reloaded.
+    comment: Follow-up change. A newly linked observee is only picked up when the entry is reloaded. Course grade sensors are already added as courses become active.
   stale-devices:
     status: todo
-    comment: Follow-up change. A student who is no longer linked or enrolled keeps their device until it is deleted by hand.
+    comment: Follow-up change. A student who is no longer linked or enrolled keeps their device until it is deleted by hand. Course grade sensors are already removed when a course is no longer active.

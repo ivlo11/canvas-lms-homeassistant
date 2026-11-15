@@ -159,6 +159,7 @@ async def test_observer_and_student_entries_cover_the_same_student(
         sensor
         for device in devices
         for sensor in er.async_entries_for_device(entity_registry, device.id)
+        if sensor.translation_key == "unsubmitted_assignments"
     ]
     assert {s.unique_id for s in sensors} == {
         f"{HOST}_10_21_unsubmitted",

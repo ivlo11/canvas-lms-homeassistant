@@ -45,8 +45,14 @@ async def test_refresh_populates_each_student(
     coordinator = parent_entry.runtime_data
     assert coordinator.update_interval == UPDATE_INTERVAL
     assert set(coordinator.data) == {ALICE["id"], BOB["id"]}
-    assert [i.assignment_id for i in coordinator.data[ALICE["id"]]] == [2, 4, 1, 5, 3]
-    assert coordinator.data[BOB["id"]] == []
+    assert [i.assignment_id for i in coordinator.data[ALICE["id"]].assignments] == [
+        2,
+        4,
+        1,
+        5,
+        3,
+    ]
+    assert coordinator.data[BOB["id"]].assignments == []
     assert {s.name for s in coordinator.students.values()} == {
         "Alice Student",
         "Bob Student",

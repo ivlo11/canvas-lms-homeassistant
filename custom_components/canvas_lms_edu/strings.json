@@ -36,6 +36,9 @@
   },
   "entity": {
     "sensor": {
+      "course_grade": {
+        "name": "{course_name} grade"
+      },
       "unsubmitted_assignments": {
         "name": "Unsubmitted assignments",
         "unit_of_measurement": "assignments"

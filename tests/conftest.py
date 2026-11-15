@@ -13,9 +13,13 @@ from canvas_lms_python_client.exceptions import (
 )
 from canvas_lms_python_client.models import Course, Submission, User
 import pytest
-from pytest_homeassistant_custom_component.common import MockConfigEntry
+from pytest_homeassistant_custom_component.common import (
+    MockConfigEntry,
+    mock_component,
+)
 
 from custom_components.canvas_lms_edu.const import CONF_USER_ID, DOMAIN
+from homeassistant.components.frontend import DATA_EXTRA_MODULE_URL, UrlManager
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import CONF_ACCESS_TOKEN, CONF_NAME, CONF_URL
 from homeassistant.core import HomeAssistant
@@ -34,9 +38,69 @@ ALICE_TOKEN = "alice-token"
 BOB_TOKEN = "bob-token"
 
 
-def course(course_id: int, name: str) -> dict[str, Any]:
+def enrollment(
+    user_id: int,
+    *,
+    kind: str = "student",
+    score: float | None = None,
+    grade: str | None = None,
+    period_score: float | None = None,
+    period_grade: str | None = None,
+    period_title: str | None = None,
+) -> dict[str, Any]:
+    """Return an enrolment as the course listing embeds it.
+
+    Canvas leaves the score fields out altogether when the course hides totals.
+    """
+    data: dict[str, Any] = {
+        "type": kind,
+        "role": "StudentEnrollment" if kind == "student" else "ObserverEnrollment",
+        "user_id": user_id,
+        "enrollment_state": "active",
+    }
+    if score is not None or grade is not None:
+        data["computed_current_score"] = score
+        data["computed_current_grade"] = grade
+    if period_title is not None:
+        data["current_grading_period_title"] = period_title
+        data["current_period_computed_current_score"] = period_score
+        data["current_period_computed_current_grade"] = period_grade
+    return data
+
+
+def course(
+    course_id: int,
+    name: str,
+    *,
+    teachers: list[dict[str, Any]] | None = None,
+    enrollments: list[dict[str, Any]] | None = None,
+    term: str | None = None,
+    start_at: str | None = None,
+    end_at: str | None = None,
+    html_url: str | None = None,
+) -> dict[str, Any]:
     """Return a course in the shape Canvas sends."""
-    return {"id": course_id, "name": name, "workflow_state": "available"}
+    data: dict[str, Any] = {
+        "id": course_id,
+        "name": name,
+        "workflow_state": "available",
+        "start_at": start_at,
+        "end_at": end_at,
+    }
+    if teachers is not None:
+        data["teachers"] = teachers
+    if enrollments is not None:
+        data["enrollments"] = enrollments
+    if term is not None:
+        data["term"] = {"id": 1, "name": term}
+    if html_url is not None:
+        data["html_url"] = html_url
+    return data
+
+
+def teacher(name: str, user_id: int = 900) -> dict[str, Any]:
+    """Return a teacher as the course listing embeds one."""
+    return {"id": user_id, "display_name": name, "anonymous_id": "x"}
 
 
 def submission(
@@ -207,6 +271,19 @@ def canvas() -> Iterator[FakeCanvas]:
 @pytest.fixture(autouse=True)
 def auto_enable_custom_integrations(enable_custom_integrations: None) -> None:
     """Let Home Assistant load the integration under test."""
+
+
+@pytest.fixture(autouse=True)
+def frontend(hass: HomeAssistant) -> UrlManager:
+    """Stand in for the frontend component and return its extra module URLs.
+
+    The real one needs Home Assistant's built frontend, which is not installed
+    for tests. The http component is the real one.
+    """
+    mock_component(hass, "frontend")
+    urls = UrlManager(lambda change, url: None, [])
+    hass.data[DATA_EXTRA_MODULE_URL] = urls
+    return urls
 
 
 def make_entry(

@@ -15,15 +15,15 @@ from .api import (
     CanvasClient,
     CanvasError,
     CanvasUser,
-    UnsubmittedAssignment,
+    StudentData,
 )
 from .const import CONF_USER_ID, DOMAIN, LOGGER, UPDATE_INTERVAL
 
 type CanvasConfigEntry = ConfigEntry[CanvasCoordinator]
 
 
-class CanvasCoordinator(DataUpdateCoordinator[dict[int, list[UnsubmittedAssignment]]]):
-    """Fetch each student's unsubmitted assignments for one config entry."""
+class CanvasCoordinator(DataUpdateCoordinator[dict[int, StudentData]]):
+    """Fetch each student's courses and unsubmitted assignments for one entry."""
 
     config_entry: CanvasConfigEntry
 
@@ -44,12 +44,12 @@ class CanvasCoordinator(DataUpdateCoordinator[dict[int, list[UnsubmittedAssignme
         )
         self.students: dict[int, CanvasUser] = {}
 
-    async def _async_update_data(self) -> dict[int, list[UnsubmittedAssignment]]:
-        """Read the students and their unsubmitted assignments from Canvas."""
+    async def _async_update_data(self) -> dict[int, StudentData]:
+        """Read the students, their courses and unsubmitted assignments."""
         try:
             students = await self.client.async_get_students(self.account)
             results = await asyncio.gather(
-                *(self.client.async_get_unsubmitted(student) for student in students)
+                *(self.client.async_get_student_data(student) for student in students)
             )
         except CanvasAuthError as err:
             raise ConfigEntryAuthFailed(
@@ -63,5 +63,5 @@ class CanvasCoordinator(DataUpdateCoordinator[dict[int, list[UnsubmittedAssignme
             ) from err
         self.students = {student.id: student for student in students}
         return {
-            student.id: items for student, items in zip(students, results, strict=True)
+            student.id: data for student, data in zip(students, results, strict=True)
         }

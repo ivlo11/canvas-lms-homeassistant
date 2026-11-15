@@ -8,6 +8,8 @@ For each student, the integration reads from Canvas every assignment in the stud
 
 - **A device per student**, with a sensor, *Unsubmitted assignments*, whose state is the number of those assignments.
 - **An action**, `canvas_lms_edu.get_unsubmitted_assignments`, that returns the full list with the student, class, assignment name, due date, points, link and status flags. See [docs/actions.md](docs/actions.md).
+- **A grade sensor per course** on each student's device, with the student's current score and the course's teachers, letter grade, term, dates and unsubmitted counts. They appear and disappear as the student's courses change. See [docs/sensors.md](docs/sensors.md).
+- **A dashboard card**, *Canvas LMS courses*, that lists a student's classes with teacher and current grade, and opens a class to show what has not been turned in. See [docs/courses-card.md](docs/courses-card.md).
 
 It works with a student's own access token or with an observer's (for example a parent's). An observer account gets a device for each student it observes. Several accounts, on the same or different Canvas sites, can be set up side by side.
 
@@ -53,6 +55,17 @@ Repeat for each account you want to add. The same account cannot be added twice.
 
 If Canvas stops accepting a token (it expired or was deleted), Home Assistant asks you to reauthenticate. Enter a new token for the same Canvas account.
 
+## Courses card
+
+The card is installed with the integration; there is no resource to add. Edit a dashboard, choose **Add card**, pick **Canvas LMS courses**, and choose a student. Or in YAML:
+
+```yaml
+type: custom:canvas-lms-courses-card
+device_id: 0123456789abcdef0123456789abcdef
+```
+
+Each class row shows the course, its teacher, and the student's current grade as a percentage. Select a class to see its unsubmitted assignments, sorted by due date, points, or name. See [docs/courses-card.md](docs/courses-card.md) for configuration, sorting, and what the grade shows.
+
 ## Removal
 
 1. Go to **Settings** > **Devices & services** and open **Canvas LMS**.
@@ -77,3 +90,5 @@ uv run pytest --cov
 ```bash
 uv run ruff check . && uv run ruff format --check .
 ```
+
+The dashboard card has its own source and tests in `frontend/`; see [docs/frontend-development.md](docs/frontend-development.md).

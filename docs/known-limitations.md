@@ -6,9 +6,11 @@ An observer entry creates a device for each student it observes when the entry i
 
 If a student is no longer linked to the observer, their sensor becomes unavailable. Their device stays until you delete it.
 
+This applies to students only. A student's course grade sensors are added and removed as their courses change, without a reload.
+
 ## Courses Canvas refuses are skipped
 
-Canvas sometimes refuses to list a single course, for example one outside its access dates, while the rest of the account works. The integration skips such a course for that refresh, so its assignments are not counted or returned. The skip is written to the log at debug level; turn on debug logging for the integration to see which course was skipped.
+Canvas sometimes refuses to list a single course, for example one outside its access dates, while the rest of the account works. The integration skips such a course for that refresh, so its assignments are not counted or returned. The course's grade sensor remains, with empty `unsubmitted_count` and `missing_count`, and the courses card shows no assignments for it. The skip is written to the log at debug level; turn on debug logging for the integration to see which course was skipped.
 
 ## An account that observes students shows only those students
 
@@ -21,6 +23,18 @@ A parent's observer entry and the student's own entry can both be set up. Home A
 ## Only active courses count
 
 Assignments in courses the student is no longer actively enrolled in, such as last term's, are not collected.
+
+## A finished course's grade history is removed
+
+When a course is no longer active for a student, its grade sensor is removed at the next successful refresh, and Home Assistant removes that sensor's history with it.
+
+## The courses card is in English
+
+The card's own text, such as *No active classes* and the sort labels, is not translated. Dates and numbers follow your Home Assistant language.
+
+## The courses card is loaded on every page
+
+Home Assistant loads the card's file with every page, not only dashboards that use the card. The file is small, about 27 KB.
 
 ## The refresh interval is fixed
 

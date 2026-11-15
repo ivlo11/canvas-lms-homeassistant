@@ -31,8 +31,8 @@ def _get_unsubmitted_assignments(call: ServiceCall) -> ServiceResponse:
     return {
         "assignments": [
             item.as_dict()
-            for items in entry.runtime_data.data.values()
-            for item in items
+            for student in entry.runtime_data.data.values()
+            for item in student.assignments
         ]
     }
 

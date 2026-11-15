@@ -9,3 +9,6 @@ LOGGER = logging.getLogger(__package__)
 CONF_USER_ID = "user_id"
 
 UPDATE_INTERVAL = timedelta(minutes=30)
+
+FRONTEND_URL = f"/{DOMAIN}/frontend"
+CARD_FILENAME = "canvas-lms-courses-card.js"

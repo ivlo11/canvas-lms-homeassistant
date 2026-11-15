@@ -1,6 +1,9 @@
 {
   "entity": {
     "sensor": {
+      "course_grade": {
+        "default": "mdi:school-outline"
+      },
       "unsubmitted_assignments": {
         "default": "mdi:clipboard-text-clock-outline"
       }

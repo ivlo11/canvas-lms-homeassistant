@@ -1,0 +1,14 @@
+{
+  "entity": {
+    "sensor": {
+      "unsubmitted_assignments": {
+        "default": "mdi:clipboard-text-clock-outline"
+      }
+    }
+  },
+  "services": {
+    "get_unsubmitted_assignments": {
+      "service": "mdi:clipboard-list-outline"
+    }
+  }
+}

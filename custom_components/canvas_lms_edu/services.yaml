@@ -1,0 +1,7 @@
+get_unsubmitted_assignments:
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: canvas_lms_edu

@@ -1,0 +1,15 @@
+{
+  "domain": "canvas_lms_edu",
+  "name": "Canvas LMS",
+  "codeowners": ["@ivlo11"],
+  "config_flow": true,
+  "documentation": "https://github.com/ivlo11/canvas-lms-homeassistant",
+  "integration_type": "service",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/ivlo11/canvas-lms-homeassistant/issues",
+  "loggers": ["canvas_lms_python_client"],
+  "requirements": [
+    "canvas_lms_python_client@git+https://github.com/ivlo11/canvas-lms-python-client.git@f9baa8552715a9b61ff2356c50b3dfdd2fd0e808"
+  ],
+  "version": "0.1.0"
+}

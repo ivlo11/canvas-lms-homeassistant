@@ -1,0 +1,65 @@
+{
+  "config": {
+    "abort": {
+      "already_configured": "This Canvas account is already configured.",
+      "reauth_successful": "The access token was updated.",
+      "wrong_account": "That access token belongs to a different Canvas account. Use a token for the account this entry was set up with."
+    },
+    "error": {
+      "cannot_connect": "Could not reach Canvas at that URL.",
+      "invalid_auth": "Canvas rejected the access token.",
+      "invalid_url": "Enter the web address of your Canvas site, for example https://school.instructure.com.",
+      "unknown": "Unexpected error. Check the Home Assistant log for details."
+    },
+    "step": {
+      "reauth_confirm": {
+        "data": {
+          "access_token": "Access token"
+        },
+        "data_description": {
+          "access_token": "A new access token for the same Canvas account."
+        },
+        "description": "Canvas no longer accepts the access token for {title}.",
+        "title": "Reauthenticate Canvas account"
+      },
+      "user": {
+        "data": {
+          "access_token": "Access token",
+          "url": "Canvas URL"
+        },
+        "data_description": {
+          "access_token": "A token created in Canvas under Account > Settings > New access token. It can belong to a student or to an observer such as a parent.",
+          "url": "The web address of your Canvas site, for example https://school.instructure.com."
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "unsubmitted_assignments": {
+        "name": "Unsubmitted assignments",
+        "unit_of_measurement": "assignments"
+      }
+    }
+  },
+  "exceptions": {
+    "invalid_auth": {
+      "message": "Canvas rejected the access token."
+    },
+    "update_failed": {
+      "message": "Could not read from Canvas: {error}"
+    }
+  },
+  "services": {
+    "get_unsubmitted_assignments": {
+      "description": "Returns every assignment the students of a Canvas account have not turned in, as of the last refresh.",
+      "fields": {
+        "config_entry_id": {
+          "description": "The Canvas account to return assignments for.",
+          "name": "Canvas account"
+        }
+      },
+      "name": "Get unsubmitted assignments"
+    }
+  }
+}

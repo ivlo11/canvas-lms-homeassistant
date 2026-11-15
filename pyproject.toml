@@ -1,0 +1,43 @@
+[project]
+name = "canvas-lms-homeassistant"
+version = "0.1.0"
+description = "Home Assistant custom integration for Canvas LMS"
+readme = "README.md"
+requires-python = ">=3.14.2"
+license = "MIT"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    # Keep in step with the requirement in custom_components/canvas_lms_edu/manifest.json
+    "canvas_lms_python_client @ git+https://github.com/ivlo11/canvas-lms-python-client.git@f9baa8552715a9b61ff2356c50b3dfdd2fd0e808",
+    "pytest-homeassistant-custom-component",
+    "pytest-cov",
+    "ruff",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.coverage.run]
+source = ["custom_components/canvas_lms_edu"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py314"
+
+[tool.ruff.lint]
+select = ["B", "C4", "D", "E", "F", "I", "PL", "PT", "RUF", "SIM", "UP", "W"]
+ignore = ["D203", "D213", "PLR2004"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["PLR0913", "PLR0917"]
+
+[tool.ruff.lint.isort]
+combine-as-imports = true
+force-sort-within-sections = true
+known-first-party = ["homeassistant"]

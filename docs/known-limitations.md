@@ -38,7 +38,7 @@ The card's own text, such as *No active classes* and the sort labels, is not tra
 
 ## The courses card is loaded on every page
 
-Home Assistant loads the card's file with every page, not only dashboards that use the card. The file is small, about 27 KB.
+Home Assistant loads the card's file with every page, not only dashboards that use the card. The file is small, about 30 KB.
 
 ## The refresh interval is fixed
 

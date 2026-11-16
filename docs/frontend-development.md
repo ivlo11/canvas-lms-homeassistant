@@ -44,6 +44,10 @@ Check the types:
 npm run typecheck
 ```
 
+## Browser support
+
+The bundle is built for ES2019 so that it loads in the older WebViews found on phones and tablets, including the Home Assistant mobile apps on devices that no longer get system updates. A test fails if newer syntax reaches the bundle.
+
 ## After changing the card
 
 1. Run `npm run build`.
@@ -52,7 +56,7 @@ npm run typecheck
 
 ## Trying it in Home Assistant
 
-Home Assistant serves the bundle at `/canvas_lms_edu/frontend/canvas-lms-courses-card.js` and loads it on every page. The URL carries the integration's version, so while developing, reload the browser page with the cache disabled to pick up a rebuilt bundle.
+Home Assistant serves the bundle at `/canvas_lms_edu/frontend/canvas-lms-courses-card.js` and loads it on every page. The URL carries the integration's version and a hash of the bundle, so a rebuilt bundle gets a new URL when Home Assistant restarts. Without a restart, reload the browser page with the cache disabled.
 
 ## Layout
 

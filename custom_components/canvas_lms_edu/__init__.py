@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 
 from homeassistant.components.frontend import add_extra_js_url
@@ -19,6 +20,8 @@ from .services import async_setup_services
 
 PLATFORMS = [Platform.SENSOR]
 
+FRONTEND_DIR = Path(__file__).parent / "frontend"
+
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 
@@ -29,18 +32,29 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     return True
 
 
+def _card_fingerprint() -> str:
+    """Return a short hash of the card bundle's contents."""
+    return hashlib.sha256((FRONTEND_DIR / CARD_FILENAME).read_bytes()).hexdigest()[:8]
+
+
 async def _async_serve_card(hass: HomeAssistant) -> None:
     """Serve the courses card and load it in every dashboard.
 
     Loading it as an extra module works for storage-mode and YAML-mode
-    dashboards alike and needs no dashboard resource. The version in the URL
-    makes browsers fetch the new bundle after an update.
+    dashboards alike and needs no dashboard resource. The URL carries the
+    integration's version and a hash of the bundle, so browsers and the mobile
+    apps, which cache aggressively, fetch a changed bundle instead of reusing
+    the old one.
     """
     integration = await async_get_integration(hass, DOMAIN)
+    fingerprint = await hass.async_add_executor_job(_card_fingerprint)
     await hass.http.async_register_static_paths(
-        [StaticPathConfig(FRONTEND_URL, str(Path(__file__).parent / "frontend"), False)]
+        [StaticPathConfig(FRONTEND_URL, str(FRONTEND_DIR), False)]
     )
-    add_extra_js_url(hass, f"{FRONTEND_URL}/{CARD_FILENAME}?v={integration.version}")
+    add_extra_js_url(
+        hass,
+        f"{FRONTEND_URL}/{CARD_FILENAME}?v={integration.version}-{fingerprint}",
+    )
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: CanvasConfigEntry) -> bool:

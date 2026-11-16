@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from http import HTTPStatus
 import json
 from pathlib import Path
@@ -18,7 +19,10 @@ from .conftest import FakeCanvas, setup_entry
 
 COMPONENT = Path(__file__).parent.parent / "custom_components" / DOMAIN
 BUNDLE = COMPONENT / "frontend" / "canvas-lms-courses-card.js"
-VERSION = json.loads((COMPONENT / "manifest.json").read_text())["version"]
+VERSION = "{}-{}".format(
+    json.loads((COMPONENT / "manifest.json").read_text())["version"],
+    hashlib.sha256(BUNDLE.read_bytes()).hexdigest()[:8],
+)
 CARD_URL = f"/{DOMAIN}/frontend/canvas-lms-courses-card.js"
 
 

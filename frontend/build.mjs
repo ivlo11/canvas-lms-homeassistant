@@ -22,7 +22,10 @@ export const options = {
   outfile: BUNDLE,
   bundle: true,
   format: "esm",
-  target: "es2022",
+  // Phones and tablets often run an older WebView than desktop browsers. Newer
+  // syntax, such as class static blocks (iOS 16.4+), makes the whole module
+  // fail to parse there, so the card would never register.
+  target: "es2019",
   minify: true,
   legalComments: "eof",
   logLevel: "info",

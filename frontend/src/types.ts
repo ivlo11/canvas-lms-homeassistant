@@ -61,6 +61,8 @@ export interface Assignment {
   points_possible: number | null;
   html_url: string | null;
   missing: boolean;
+  graded: boolean;
+  score: number | null;
 }
 
 /** A class row: one course grade sensor of the configured student. */

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from types import SimpleNamespace
 
 import aiohttp
 from canvas_lms_python_client.exceptions import (
@@ -23,7 +24,10 @@ from custom_components.canvas_lms_edu.api import (
     async_validate,
     build_course,
     build_item,
+    expects_online_submission,
     host_from_url,
+    is_missing,
+    is_turned_in,
     normalize_url,
     sort_items,
 )
@@ -151,8 +155,10 @@ def test_item_carries_every_field() -> None:
                 submission_types=["on_paper"],
                 locked_for_user=True,
                 missing=True,
-                excused=True,
                 course_id=102,
+                workflow_state="graded",
+                grader_id=900,
+                score=0,
             )
         ),
         Course.from_dict(course(102, "Biology")),
@@ -170,15 +176,16 @@ def test_item_carries_every_field() -> None:
         "html_url": f"{URL}/courses/102/assignments/7",
         "submission_types": ["on_paper"],
         "locked_for_user": True,
-        "missing": True,
-        "excused": True,
+        "missing": False,
+        "excused": False,
+        "graded": True,
+        "score": 0.0,
     }
 
 
 def test_item_with_empty_due_date_and_points() -> None:
     """An undated, pointless assignment is carried with empty values."""
-    data = submission(8)
-    data["assignment"]["due_at"] = None
+    data = submission(8, due_at=None)
     data["assignment"]["points_possible"] = None
     item = build_item(
         Submission.from_dict(data), Course.from_dict(course(101, "Algebra")), ALICE_USER
@@ -188,6 +195,8 @@ def test_item_with_empty_due_date_and_points() -> None:
     assert item.missing is False
     assert item.excused is False
     assert item.locked_for_user is False
+    assert item.graded is False
+    assert item.score is None
 
 
 async def test_collects_from_every_active_course(canvas: FakeCanvas) -> None:
@@ -481,3 +490,244 @@ async def test_course_counts(canvas: FakeCanvas) -> None:
     counts = {c.name: (c.unsubmitted_count, c.missing_count) for c in data.courses}
     assert counts == {"Algebra": (5, 2), "Biology": (0, 0), "Chemistry": (None, None)}
     assert len(data.assignments) == 5
+
+
+def _sub(assignment_id: int = 1, **kwargs) -> Submission:
+    """Build a client Submission from the fixture's shape."""
+    return Submission.from_dict(submission(assignment_id, **kwargs))
+
+
+@pytest.mark.parametrize(
+    ("types", "quiz", "expected"),
+    [
+        (["on_paper"], False, False),
+        (["external_tool"], False, False),
+        (["none"], False, False),
+        (["not_graded"], False, False),
+        (["wiki_page"], False, False),
+        ([], False, False),
+        (["online_upload"], False, True),
+        (["online_text_entry", "online_url"], False, True),
+        (["on_paper", "online_upload"], False, True),
+        (["external_tool"], True, True),
+    ],
+)
+def test_expects_online_submission(
+    types: list[str], quiz: bool, expected: bool
+) -> None:
+    """Only no-online types on their own, or no types, expect nothing online."""
+    # The client's enum has no wiki_page, so the assignment is not validated.
+    assignment = SimpleNamespace(submission_types=types, is_quiz_lti_assignment=quiz)
+    assert expects_online_submission(assignment) is expected
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "turned_in"),
+    [
+        ({}, False),
+        ({"workflow_state": "submitted", "submitted_at": "2026-11-01T00:00:00Z"}, True),
+        (
+            {
+                "workflow_state": "pending_review",
+                "submitted_at": "2026-11-01T00:00:00Z",
+            },
+            True,
+        ),
+        (
+            {
+                "workflow_state": "graded",
+                "submitted_at": "2026-11-01T00:00:00Z",
+                "score": 9,
+            },
+            True,
+        ),
+        ({"workflow_state": "graded", "grader_id": 900, "score": 0}, False),
+        (
+            {
+                "workflow_state": "graded",
+                "grader_id": 900,
+                "score": 8,
+                "submission_types": ["on_paper"],
+            },
+            True,
+        ),
+        ({"submission_types": ["on_paper"]}, False),
+        (
+            {
+                "workflow_state": "graded",
+                "grader_id": 900,
+                "score": 0,
+                "submission_types": ["external_tool"],
+                "is_quiz_lti_assignment": True,
+            },
+            False,
+        ),
+    ],
+    ids=[
+        "unsubmitted",
+        "submitted",
+        "pending-review",
+        "graded-with-submission",
+        "online-graded-0-without-submission",
+        "on-paper-graded",
+        "on-paper-ungraded",
+        "new-quiz-graded-without-being-taken",
+    ],
+)
+def test_is_turned_in(kwargs: dict, turned_in: bool) -> None:
+    """Turned in means a submission time, or graded work not expected online."""
+    assert is_turned_in(_sub(**kwargs)) is turned_in
+
+
+PAST_DUE = {"seconds_late": 3600}
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "missing"),
+    [
+        (PAST_DUE, True),
+        ({**PAST_DUE, "workflow_state": "graded", "grader_id": 900, "score": 0}, True),
+        ({**PAST_DUE, "excused": True}, False),
+        ({**PAST_DUE, "custom_grade_status_id": 3}, False),
+        ({**PAST_DUE, "late_policy_status": "none"}, False),
+        ({**PAST_DUE, "late_policy_status": "late"}, False),
+        ({"seconds_late": 0, "late_policy_status": "missing"}, True),
+        ({**PAST_DUE, "submitted_at": "2026-11-01T00:00:00Z"}, False),
+        ({"seconds_late": 0}, False),
+        ({"seconds_late": None}, False),
+        ({**PAST_DUE, "submission_types": ["on_paper"]}, False),
+        (
+            {
+                **PAST_DUE,
+                "submission_types": ["external_tool"],
+                "is_quiz_lti_assignment": True,
+            },
+            True,
+        ),
+    ],
+    ids=[
+        "past-due",
+        "graded-0-without-being-turned-in",
+        "excused",
+        "custom-grade-status",
+        "late-status-none",
+        "late-status-late",
+        "late-status-missing-before-due",
+        "submitted",
+        "not-yet-due",
+        "no-seconds-late",
+        "ungraded-past-due-on-paper",
+        "new-quiz",
+    ],
+)
+def test_is_missing(kwargs: dict, missing: bool) -> None:
+    """Each branch of the integration's missing rule, in Canvas's order."""
+    kwargs.setdefault("missing", False)
+    assert is_missing(_sub(**kwargs)) is missing
+
+
+def test_canvas_missing_flag_is_not_read() -> None:
+    """Canvas's own missing flag no longer decides the item's."""
+    assert is_missing(_sub(missing=True, seconds_late=0)) is False
+
+
+async def test_graded_zero_online_assignment_is_collected(canvas: FakeCanvas) -> None:
+    """Online work graded 0 without being turned in is collected as missing."""
+    # Canvas lists only active submissions and the client refuses "deleted",
+    # so a deleted row is set on an already built model.
+    deleted = Submission.from_dict(submission(57)).model_copy(
+        update={"workflow_state": "deleted"}
+    )
+    canvas.submissions[(101, ALICE["id"])] = [
+        submission(
+            54,
+            due_at="2026-11-01T23:59:00Z",
+            workflow_state="graded",
+            grader_id=900,
+            score=0,
+            seconds_late=86400,
+        ),
+        submission(55, workflow_state="submitted", submitted_at="2026-11-01T00:00:00Z"),
+        submission(
+            56,
+            workflow_state="graded",
+            grader_id=900,
+            score=8,
+            submission_types=["on_paper"],
+        ),
+        deleted,
+    ]
+    client = await CanvasClient.async_create(URL, ALICE_TOKEN)
+    data = await client.async_get_student_data(ALICE_USER)
+    algebra = [i for i in data.assignments if i.course_id == 101]
+    assert [(i.assignment_id, i.missing, i.graded, i.score) for i in algebra] == [
+        (54, True, True, 0.0)
+    ]
+    assert data.courses[0].unsubmitted_count == 1
+    assert data.courses[0].missing_count == 1
+    per_course = [
+        kw for name, kw in canvas.calls if name == "submissions_api_for_students_all"
+    ]
+    assert all("workflow_state" not in kw for kw in per_course)
+
+
+def test_due_date_is_the_students_own() -> None:
+    """An extension's date is used rather than the assignment's general one."""
+    algebra = Course.from_dict(course(101, "Algebra"))
+    item = build_item(
+        _sub(due_at="2026-11-01T23:59:00Z", cached_due_date="2026-11-08T23:59:00Z"),
+        algebra,
+        ALICE_USER,
+    )
+    assert item.due_at == "2026-11-08T23:59:00+00:00"
+
+
+def test_no_due_date_for_the_student() -> None:
+    """With no date for the student, the general due date is not used."""
+    algebra = Course.from_dict(course(101, "Algebra"))
+    item = build_item(
+        _sub(due_at="2026-11-01T23:59:00Z", cached_due_date=None), algebra, ALICE_USER
+    )
+    assert item.due_at is None
+
+
+def test_unparseable_due_date(caplog: pytest.LogCaptureFixture) -> None:
+    """An unparseable due date is empty and logged at debug level."""
+    caplog.set_level(logging.DEBUG)
+    algebra = Course.from_dict(course(101, "Algebra"))
+    item = build_item(_sub(cached_due_date="next Tuesday"), algebra, ALICE_USER)
+    assert item.due_at is None
+    (record,) = [r for r in caplog.records if "next Tuesday" in r.message]
+    assert record.levelno == logging.DEBUG
+
+
+def test_due_date_with_offset_and_fraction() -> None:
+    """Canvas's other timestamp forms are normalised to UTC."""
+    algebra = Course.from_dict(course(101, "Algebra"))
+    item = build_item(
+        _sub(cached_due_date="2026-11-20T18:59:00.000-05:00"), algebra, ALICE_USER
+    )
+    assert item.due_at == "2026-11-20T23:59:00+00:00"
+
+
+async def test_extension_moves_assignment_in_order(canvas: FakeCanvas) -> None:
+    """Ordering uses the student's due date, so an extension reorders work."""
+    canvas.courses[ALICE["id"]] = [course(101, "Algebra")]
+    canvas.submissions[(101, ALICE["id"])] = [
+        submission(
+            1,
+            due_at="2026-11-01T23:59:00Z",
+            cached_due_date="2026-11-12T23:59:00Z",
+        ),
+        submission(2, due_at="2026-11-05T23:59:00Z"),
+    ]
+    client = await CanvasClient.async_create(URL, ALICE_TOKEN)
+    items = (await client.async_get_student_data(ALICE_USER)).assignments
+    assert [i.assignment_id for i in items] == [2, 1]
+
+
+def test_not_graded_yet() -> None:
+    """An ungraded item is not graded and has no score."""
+    algebra = Course.from_dict(course(101, "Algebra"))
+    item = build_item(_sub(), algebra, ALICE_USER)
+    assert (item.graded, item.score) == (False, None)

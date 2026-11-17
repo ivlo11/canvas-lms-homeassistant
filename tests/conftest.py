@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator, Iterator
 from dataclasses import dataclass, field
+from types import EllipsisType
 from typing import Any
 from unittest.mock import AsyncMock, patch
 
@@ -115,14 +116,39 @@ def submission(
     excused: bool = False,
     course_id: int = 101,
     user_id: int = 21,
+    workflow_state: str = "unsubmitted",
+    submitted_at: str | None = None,
+    grader_id: int | None = None,
+    score: float | None = None,
+    late_policy_status: str | None = None,
+    custom_grade_status_id: int | None = None,
+    cached_due_date: str | EllipsisType | None = ...,
+    seconds_late: float | None = None,
+    is_quiz_lti_assignment: bool = False,
 ) -> dict[str, Any]:
-    """Return an unsubmitted submission with its assignment embedded."""
+    """Return a submission with its assignment embedded.
+
+    The defaults describe an ungraded, unsubmitted, online submission. The
+    student's due date (``cached_due_date``) defaults to the assignment's.
+    ``missing`` sets Canvas's own flag and, unless ``seconds_late`` is given,
+    makes the submission past due.
+    """
+    if cached_due_date is ...:
+        cached_due_date = due_at
+    if seconds_late is None:
+        seconds_late = 86400 if missing else 0
     return {
         "id": 9000 + assignment_id,
         "assignment_id": assignment_id,
         "user_id": user_id,
-        "workflow_state": "unsubmitted",
-        "submitted_at": None,
+        "workflow_state": workflow_state,
+        "submitted_at": submitted_at,
+        "grader_id": grader_id,
+        "score": score,
+        "late_policy_status": late_policy_status,
+        "custom_grade_status_id": custom_grade_status_id,
+        "cached_due_date": cached_due_date,
+        "seconds_late": seconds_late,
         "missing": missing,
         "excused": excused,
         "assignment": {
@@ -134,6 +160,7 @@ def submission(
             "html_url": f"{URL}/courses/{course_id}/assignments/{assignment_id}",
             "submission_types": submission_types or ["online_upload"],
             "locked_for_user": locked_for_user,
+            "is_quiz_lti_assignment": is_quiz_lti_assignment,
         },
     }
 
@@ -149,8 +176,8 @@ class FakeCanvas:
     # student id -> active courses / concluded courses
     courses: dict[int, list[dict[str, Any]]] = field(default_factory=dict)
     concluded_courses: dict[int, list[dict[str, Any]]] = field(default_factory=dict)
-    # (course id, student id) -> unsubmitted submissions
-    submissions: dict[tuple[int, int], list[dict[str, Any]]] = field(
+    # (course id, student id) -> every submission, in any state
+    submissions: dict[tuple[int, int], list[dict[str, Any] | Submission]] = field(
         default_factory=dict
     )
     forbidden_courses: set[int] = field(default_factory=set)
@@ -252,11 +279,15 @@ def canvas() -> Iterator[FakeCanvas]:
             course_id = int(kwargs["course_id"])
             if course_id in fake.forbidden_courses:
                 raise ForbiddenException(status=403, reason="Forbidden")
-            assert kwargs["workflow_state"] == "unsubmitted"
+            assert "workflow_state" not in kwargs
             assert kwargs["include"] == ["assignment"]
             (student_id,) = kwargs["student_ids"]
             for item in fake.submissions.get((course_id, int(student_id)), []):
-                yield Submission.from_dict(item)
+                # A test may supply a built model for a value the client's
+                # validation would refuse.
+                yield (
+                    item if isinstance(item, Submission) else Submission.from_dict(item)
+                )
 
     with (
         patch(f"{API}.ApiClient", side_effect=make_client),

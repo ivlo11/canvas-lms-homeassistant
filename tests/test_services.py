@@ -12,7 +12,7 @@ from homeassistant.core import HomeAssistant, SupportsResponse
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.setup import async_setup_component
 
-from .conftest import ALICE, FakeCanvas, setup_entry, submission
+from .conftest import ALICE, BOB, FakeCanvas, setup_entry, submission
 
 SERVICE = "get_unsubmitted_assignments"
 
@@ -87,6 +87,8 @@ async def test_returns_every_students_assignments(
         "locked_for_user": False,
         "missing": True,
         "excused": False,
+        "graded": False,
+        "score": None,
     }
 
 
@@ -164,3 +166,79 @@ async def test_action_does_not_call_canvas(
     second = await _call(hass, parent_entry.entry_id)
     assert first == second
     assert len(canvas.calls) == before
+
+
+async def test_graded_zero_and_extension_are_returned(
+    hass: HomeAssistant, canvas: FakeCanvas, alice_entry: MockConfigEntry
+) -> None:
+    """Missing work graded 0 is returned graded, and due dates are the student's."""
+    canvas.submissions[(101, ALICE["id"])] = [
+        submission(
+            54,
+            due_at="2026-11-01T23:59:00Z",
+            workflow_state="graded",
+            grader_id=900,
+            score=0,
+            seconds_late=86400,
+        ),
+        submission(
+            55,
+            due_at="2026-11-01T23:59:00Z",
+            cached_due_date="2026-11-08T23:59:00Z",
+        ),
+    ]
+    canvas.submissions[(102, ALICE["id"])] = []
+    await setup_entry(hass, alice_entry)
+    items = {
+        i["assignment_id"]: i
+        for i in (await _call(hass, alice_entry.entry_id))["assignments"]
+    }
+    assert (items[54]["missing"], items[54]["graded"], items[54]["score"]) == (
+        True,
+        True,
+        0.0,
+    )
+    assert items[55]["due_at"] == "2026-11-08T23:59:00+00:00"
+    assert (items[55]["graded"], items[55]["score"]) == (False, None)
+
+
+async def test_counts_agree_with_course_sensors(
+    hass: HomeAssistant, canvas: FakeCanvas, parent_entry: MockConfigEntry
+) -> None:
+    """Per student and course, the action's counts match the course sensor's."""
+    canvas.submissions[(101, ALICE["id"])].append(
+        submission(
+            54,
+            due_at="2026-11-01T23:59:00Z",
+            workflow_state="graded",
+            grader_id=900,
+            score=0,
+            seconds_late=86400,
+        )
+    )
+    canvas.submissions[(101, BOB["id"])] = [
+        submission(1, user_id=BOB["id"], missing=True),
+        submission(
+            6,
+            user_id=BOB["id"],
+            workflow_state="submitted",
+            submitted_at="2026-11-01T00:00:00Z",
+        ),
+    ]
+    await setup_entry(hass, parent_entry)
+    items = (await _call(hass, parent_entry.entry_id))["assignments"]
+    sensors = [
+        state
+        for state in hass.states.async_all("sensor")
+        if "unsubmitted_count" in state.attributes
+    ]
+    assert len(sensors) == 3
+    for state in sensors:
+        returned = [
+            i
+            for i in items
+            if i["student_id"] == state.attributes["student_id"]
+            and i["course_id"] == state.attributes["course_id"]
+        ]
+        assert state.attributes["unsubmitted_count"] == len(returned)
+        assert state.attributes["missing_count"] == sum(i["missing"] for i in returned)

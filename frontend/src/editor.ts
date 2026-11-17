@@ -1,5 +1,6 @@
 import { LitElement, html } from "lit";
 
+import { defineElement } from "./define";
 import { DOMAIN, type CardConfig, type HomeAssistant } from "./types";
 
 export const EDITOR_TYPE = "canvas-lms-courses-card-editor";
@@ -59,6 +60,4 @@ export class CanvasLmsCoursesCardEditor extends LitElement {
   }
 }
 
-if (!customElements.get(EDITOR_TYPE)) {
-  customElements.define(EDITOR_TYPE, CanvasLmsCoursesCardEditor);
-}
+defineElement(EDITOR_TYPE, CanvasLmsCoursesCardEditor);

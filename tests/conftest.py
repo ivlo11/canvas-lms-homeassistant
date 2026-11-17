@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator, Iterator
 from dataclasses import dataclass, field
+from pathlib import Path
 from types import EllipsisType
 from typing import Any
 from unittest.mock import AsyncMock, patch
@@ -21,9 +22,13 @@ from pytest_homeassistant_custom_component.common import (
 
 from custom_components.canvas_lms_edu.const import CONF_USER_ID, DOMAIN
 from homeassistant.components.frontend import DATA_EXTRA_MODULE_URL, UrlManager
+from homeassistant.components.lovelace import LovelaceData
+from homeassistant.components.lovelace.const import LOVELACE_DATA, MODE_STORAGE
+from homeassistant.components.lovelace.resources import ResourceStorageCollection
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import CONF_ACCESS_TOKEN, CONF_NAME, CONF_URL
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 
 API = "custom_components.canvas_lms_edu.api"
 
@@ -315,6 +320,38 @@ def frontend(hass: HomeAssistant) -> UrlManager:
     urls = UrlManager(lambda change, url: None, [])
     hass.data[DATA_EXTRA_MODULE_URL] = urls
     return urls
+
+
+@pytest.fixture(autouse=True)
+def config_dir(hass: HomeAssistant, tmp_path: Path) -> Path:
+    """Give each test its own config folder, with a ``www`` folder in it."""
+    hass.config.config_dir = str(tmp_path)
+    (tmp_path / "www").mkdir()
+    return tmp_path
+
+
+class _NoDashboardConfig:
+    """The default dashboard's config, which holds no resources to import."""
+
+    async def async_load(self, force: bool) -> dict[str, Any]:
+        raise HomeAssistantError("no config")
+
+
+@pytest.fixture(autouse=True)
+def resources(hass: HomeAssistant) -> ResourceStorageCollection:
+    """Stand in for the dashboards component and return its resource collection.
+
+    The collection is the real one, kept in storage.
+    """
+    mock_component(hass, "lovelace")
+    collection = ResourceStorageCollection(hass, _NoDashboardConfig())  # type: ignore[arg-type]
+    hass.data[LOVELACE_DATA] = LovelaceData(
+        resource_mode=MODE_STORAGE,
+        dashboards={},
+        resources=collection,
+        yaml_dashboards={},
+    )
+    return collection
 
 
 def make_entry(

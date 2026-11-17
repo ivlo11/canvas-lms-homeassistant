@@ -1,6 +1,7 @@
 import { LitElement, html, nothing, type PropertyValues } from "lit";
 
 import { configEntryId, deviceName, findCourses } from "./courses";
+import { defineElement } from "./define";
 import { EDITOR_TYPE } from "./editor";
 import { dueText, gradeText, pointsText } from "./format";
 import { sortAssignments } from "./sort";
@@ -306,9 +307,7 @@ export class CanvasLmsCoursesCard extends LitElement {
   }
 }
 
-if (!customElements.get(CARD_TYPE)) {
-  customElements.define(CARD_TYPE, CanvasLmsCoursesCard);
-}
+defineElement(CARD_TYPE, CanvasLmsCoursesCard);
 
 declare global {
   interface Window {

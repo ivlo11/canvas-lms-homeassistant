@@ -104,7 +104,7 @@ Selecting a class row SHALL show, within the card, the assignments the student h
 - **THEN** class rows, the back control, and the sort control can each be focused and activated
 
 ### Requirement: Each assignment shows its details
-Each assignment in the class view SHALL show its name, due date, and points possible, SHALL mark assignments Canvas reports as missing, and SHALL link to the assignment in Canvas.
+Each assignment in the class view SHALL show its name, the student's due date, and points possible, SHALL mark assignments the integration marks as missing, and SHALL link to the assignment in Canvas.
 
 #### Scenario: Assignment with all details
 - **WHEN** an assignment has a name, a due date, and points possible
@@ -115,8 +115,12 @@ Each assignment in the class view SHALL show its name, due date, and points poss
 - **THEN** the row shows the assignment without that value
 
 #### Scenario: Missing assignment
-- **WHEN** Canvas reports an assignment as missing
+- **WHEN** the integration marks an assignment as missing
 - **THEN** the row is marked as missing
+
+#### Scenario: Missing assignment graded 0
+- **WHEN** an assignment was graded 0 without being turned in and the integration marks it missing
+- **THEN** the row is shown and marked as missing
 
 #### Scenario: Opening an assignment
 - **WHEN** the viewer selects an assignment

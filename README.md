@@ -91,4 +91,4 @@ uv run pytest --cov
 uv run ruff check . && uv run ruff format --check .
 ```
 
-The dashboard card has its own source and tests in `frontend/`; see [docs/frontend-development.md](docs/frontend-development.md).
+The dashboard card has its own source and tests in `frontend/`; see [docs/frontend-development.md](docs/frontend-development.md). End-to-end tests run the integration in Home Assistant containers; see [docs/e2e-tests.md](docs/e2e-tests.md).

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-from pathlib import Path
 
 from homeassistant.components.frontend import add_extra_js_url
 from homeassistant.components.http import StaticPathConfig
@@ -14,13 +13,12 @@ from homeassistant.helpers.typing import ConfigType
 from homeassistant.loader import async_get_integration
 
 from .api import CanvasClient
+from .card import FRONTEND_DIR, async_remove_local_card, async_setup_local_card
 from .const import CARD_FILENAME, DOMAIN, FRONTEND_URL
 from .coordinator import CanvasConfigEntry, CanvasCoordinator
 from .services import async_setup_services
 
 PLATFORMS = [Platform.SENSOR]
-
-FRONTEND_DIR = Path(__file__).parent / "frontend"
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
@@ -40,21 +38,24 @@ def _card_fingerprint() -> str:
 async def _async_serve_card(hass: HomeAssistant) -> None:
     """Serve the courses card and load it in every dashboard.
 
-    Loading it as an extra module works for storage-mode and YAML-mode
-    dashboards alike and needs no dashboard resource. The URL carries the
-    integration's version and a hash of the bundle, so browsers and the mobile
-    apps, which cache aggressively, fetch a changed bundle instead of reusing
-    the old one.
+    The card is copied into ``config/www`` and listed as a dashboard resource,
+    so pages opened while Home Assistant is starting load it. It's also loaded
+    as an extra module, which covers resources kept in YAML, the first start
+    after ``config/www`` is created, and a resource removed by hand. The card
+    defines its elements once however often it's loaded.
+
+    Both URLs carry the integration's version and a hash of the bundle, so
+    browsers and the mobile apps, which cache aggressively, fetch a changed
+    bundle instead of reusing the old one.
     """
     integration = await async_get_integration(hass, DOMAIN)
     fingerprint = await hass.async_add_executor_job(_card_fingerprint)
+    version = f"{integration.version}-{fingerprint}"
+    await async_setup_local_card(hass, version)
     await hass.http.async_register_static_paths(
         [StaticPathConfig(FRONTEND_URL, str(FRONTEND_DIR), False)]
     )
-    add_extra_js_url(
-        hass,
-        f"{FRONTEND_URL}/{CARD_FILENAME}?v={integration.version}-{fingerprint}",
-    )
+    add_extra_js_url(hass, f"{FRONTEND_URL}/{CARD_FILENAME}?v={version}")
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: CanvasConfigEntry) -> bool:
@@ -79,3 +80,13 @@ async def async_unload_entry(hass: HomeAssistant, entry: CanvasConfigEntry) -> b
     if unloaded:
         await entry.runtime_data.client.async_close()
     return unloaded
+
+
+async def async_remove_entry(hass: HomeAssistant, entry: CanvasConfigEntry) -> None:
+    """Remove the courses card's files with the last entry."""
+    if any(
+        other.entry_id != entry.entry_id
+        for other in hass.config_entries.async_entries(DOMAIN)
+    ):
+        return
+    await async_remove_local_card(hass)

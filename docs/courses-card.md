@@ -2,7 +2,9 @@
 
 A dashboard card that lists one student's active classes with the teacher and current grade. Selecting a class shows the assignments the student has not turned in for it.
 
-The card comes with the integration. There is no dashboard resource to add: once the integration is installed and Home Assistant has restarted, the card is available in every dashboard. If it does not appear, reload the browser page.
+The card comes with the integration, and you don't add a dashboard resource yourself. The integration copies the card to `config/www/canvas_lms_edu/` and adds it to the dashboard resources, which every dashboard loads, whether it's managed in the UI or written in YAML. That way the card also shows on pages opened while Home Assistant is still starting, such as a wall tablet on the default dashboard.
+
+If the card doesn't appear right after installing, reload the browser page. If your `config` folder had no `www` folder, the integration creates one, and the card shows during startup from the next restart on.
 
 ## Adding the card
 
@@ -28,6 +30,20 @@ title: Alice's classes
 | `title` | no | The card's title. Defaults to the student's name. |
 
 The card works in dashboards managed in the UI and in dashboards defined in YAML.
+
+### Resources kept in YAML
+
+If your `configuration.yaml` keeps dashboard resources in YAML (`lovelace: resource_mode: yaml`), the integration can't add the resource. The card still loads once Home Assistant has started. For it to load on pages opened during startup, add it to your resources:
+
+```yaml
+lovelace:
+  resource_mode: yaml
+  resources:
+    - url: /local/canvas_lms_edu/canvas-lms-courses-card.js
+      type: module
+```
+
+After an update, reload the page with the cache disabled if the card looks out of date.
 
 ## The class list
 

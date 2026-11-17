@@ -1,0 +1,27 @@
+# Home Assistant with the integration, and a stub Canvas, for the end-to-end tests.
+# The tests start and stop this; see docs/e2e-tests.md.
+name: canvas-lms-e2e
+
+services:
+  canvas:
+    image: python:3.14-slim
+    command: ["python", "-u", "/stub/server.py"]
+    volumes:
+      - ./canvas-stub:/stub:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+      interval: 2s
+      retries: 15
+
+  homeassistant:
+    image: ghcr.io/home-assistant/home-assistant:${HA_VERSION:?set HA_VERSION, for example 2026.10.4}
+    ports:
+      - "${HA_PORT:-8123}:8123"
+    volumes:
+      - ./run/config:/config
+      - ${INTEGRATION_DIR:-../custom_components/canvas_lms_edu}:/config/custom_components/canvas_lms_edu:ro
+    environment:
+      TZ: UTC
+    depends_on:
+      canvas:
+        condition: service_healthy

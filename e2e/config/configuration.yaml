@@ -1,0 +1,15 @@
+# Home Assistant configuration for the end-to-end tests.
+default_config:
+
+logger:
+  default: warning
+  logs:
+    custom_components.canvas_lms_edu: debug
+
+lovelace:
+  dashboards:
+    canvas-yaml:
+      mode: yaml
+      title: Canvas YAML
+      filename: dashboards/canvas.yaml
+      show_in_sidebar: false

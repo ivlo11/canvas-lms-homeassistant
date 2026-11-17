@@ -1,0 +1,16 @@
+{
+  "name": "canvas-lms-e2e",
+  "private": true,
+  "type": "module",
+  "description": "End-to-end tests: the courses card in a real Home Assistant",
+  "license": "MIT",
+  "scripts": {
+    "test": "playwright test",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.64.1",
+    "@types/node": "24.10.1",
+    "typescript": "7.0.2"
+  }
+}

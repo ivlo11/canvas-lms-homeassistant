@@ -40,6 +40,19 @@ The card's own text, such as *No active classes* and the sort labels, is not tra
 
 Home Assistant loads the card's file with every page, not only dashboards that use the card. The file is small, about 30 KB.
 
+## The courses card on pages opened during startup
+
+The card is added to the dashboard resources so that it shows on pages opened while Home Assistant is starting. Two setups miss that:
+
+- **Resources kept in YAML** (`lovelace: resource_mode: yaml`). The integration can't add the resource. Add it yourself as [Resources kept in YAML](courses-card.md#resources-kept-in-yaml) shows, or reload pages opened during startup.
+- **No `www` folder.** If `config/www` didn't exist, the integration creates it, and Home Assistant only serves it from the next restart. Until then, reload pages opened during startup.
+
+## The card's resource comes back
+
+The integration keeps the card's dashboard resource while it's installed. If you delete the resource under **Settings** > **Dashboards** > **Resources**, it's added again at the next restart. To remove the card, remove the integration's entries; removing the last one deletes the resource and `config/www/canvas_lms_edu/`.
+
+If you delete the integration's files without removing its entries first, the resource and that folder stay. Delete them by hand.
+
 ## The refresh interval is fixed
 
 Data is refreshed every 30 minutes and there is no setting for it. To refresh at another time, call `homeassistant.update_entity` on one of the entry's sensors.

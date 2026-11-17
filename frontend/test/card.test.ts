@@ -65,6 +65,11 @@ describe("configuration", () => {
     expect(listed[0].name).toBe("Canvas LMS courses");
   });
 
+  it("defines the card and its editor when the module loads", () => {
+    expect(customElements.get("canvas-lms-courses-card")).toBeDefined();
+    expect(customElements.get("canvas-lms-courses-card-editor")).toBeDefined();
+  });
+
   it("shows a configuration error when no student is configured", async () => {
     const card = await mount(fakeHass(FOUR), {});
     expect(text(one(card, "[role=alert]"))).toContain("Choose a student");

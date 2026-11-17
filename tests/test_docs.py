@@ -10,6 +10,7 @@ from freezegun.api import FrozenDateTimeFactory
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 import yaml
 
+from custom_components.canvas_lms_edu.card import LOCAL_URL
 from custom_components.canvas_lms_edu.const import DOMAIN
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.template import Template
@@ -116,13 +117,21 @@ def test_card_page_examples() -> None:
         re.findall(r"^\| `(\w+)` \| (?:yes|no) \|", CARD.read_text(), re.MULTILINE)
     )
     assert documented == options
-    examples = [*_blocks(CARD, "yaml"), *_blocks(README, "yaml")]
+    blocks = [
+        yaml.safe_load(b) for b in [*_blocks(CARD, "yaml"), *_blocks(README, "yaml")]
+    ]
+    resources = [b for b in blocks if "lovelace" in b]
+    examples = [b for b in blocks if "lovelace" not in b]
     assert len(examples) == 2
-    for example in examples:
-        config = yaml.safe_load(example)
+    for config in examples:
         assert config["type"] == "custom:canvas-lms-courses-card"
         assert "device_id" in config
         assert set(config) <= options
+
+    # The resource line for YAML resources points at the copy the integration makes.
+    (resource,) = resources
+    assert resource["lovelace"]["resource_mode"] == "yaml"
+    assert resource["lovelace"]["resources"] == [{"url": LOCAL_URL, "type": "module"}]
 
     # The messages and sort labels the page describes are the card's own.
     source = "".join(
@@ -153,3 +162,19 @@ def test_frontend_page_commands_exist() -> None:
         assert name in scripts, command
     for path in re.findall(r"^\| `(frontend/[^`]+)` \|", FRONTEND.read_text(), re.M):
         assert all((ROOT / part.strip("` ")).exists() for part in path.split("`, `"))
+
+
+def _anchors(path: Path) -> set[str]:
+    headings = re.findall(r"^#+ (.+)$", path.read_text(), re.MULTILINE)
+    return {re.sub(r"[^\w\- ]", "", h.lower()).replace(" ", "-") for h in headings}
+
+
+def test_relative_links_resolve() -> None:
+    """Links between the docs point at files and headings that exist."""
+    for page in [README, *DOCS.parent.glob("*.md")]:
+        for target in re.findall(r"\]\((?!https?:|#)([^)\s]+)\)", page.read_text()):
+            file, _, anchor = target.partition("#")
+            linked = (page.parent / file).resolve()
+            assert linked.exists(), f"{page.name}: {target}"
+            if anchor and linked.suffix == ".md":
+                assert anchor in _anchors(linked), f"{page.name}: {target}"

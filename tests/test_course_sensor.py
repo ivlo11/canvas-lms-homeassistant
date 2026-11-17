@@ -217,6 +217,26 @@ async def test_link_term_dates_and_counts_attributes(
         assert attributes["unsubmitted_count"] == len(returned)
 
 
+async def test_missing_work_graded_zero_is_counted(
+    hass: HomeAssistant, canvas: FakeCanvas, parent_entry: MockConfigEntry
+) -> None:
+    """Online work graded 0 and never turned in counts as unsubmitted and missing."""
+    canvas.submissions[(101, ALICE["id"])] = [
+        submission(
+            54,
+            due_at="2026-11-01T23:59:00Z",
+            workflow_state="graded",
+            grader_id=900,
+            score=0,
+            seconds_late=86400,
+        )
+    ]
+    await setup_entry(hass, parent_entry)
+    attributes = hass.states.get(ALGEBRA).attributes
+    assert attributes["unsubmitted_count"] == 1
+    assert attributes["missing_count"] == 1
+
+
 async def test_refused_course_has_empty_counts(
     hass: HomeAssistant, canvas: FakeCanvas, parent_entry: MockConfigEntry
 ) -> None:

@@ -33,6 +33,11 @@ REQUEST_TIMEOUT = 30.0
 PAGE_SIZE = 100
 MAX_CONCURRENT_COURSES = 5
 COURSE_INCLUDES = ["teachers", "term", "total_scores", "current_grading_period_scores"]
+# Submission types that alone mean nothing is handed in online, as in Canvas's
+# AbstractAssignment#expects_submission?.
+NO_ONLINE_SUBMISSION = frozenset(
+    {"on_paper", "external_tool", "none", "not_graded", "wiki_page"}
+)
 
 
 class CanvasError(Exception):
@@ -76,6 +81,8 @@ class UnsubmittedAssignment:
     locked_for_user: bool
     missing: bool
     excused: bool
+    graded: bool
+    score: float | None
 
     def as_dict(self) -> dict[str, Any]:
         """Return the item as a plain dict."""
@@ -134,6 +141,68 @@ def _iso(value: datetime | None) -> str | None:
     return value.astimezone(UTC).isoformat()
 
 
+def _parse_due(value: str | None) -> str | None:
+    """Format the student's due date, as Canvas sends it, in UTC ISO 8601.
+
+    The client types ``cached_due_date`` as a string, so it is parsed here. An
+    unparseable value is treated as no due date.
+    """
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        _LOGGER.debug("Ignoring unparseable due date %r", value)
+        return None
+    return _iso(parsed)
+
+
+def expects_online_submission(assignment: Any) -> bool:
+    """Return whether the student is expected to hand the assignment in online.
+
+    Mirrors Canvas's ``expects_submission?``, plus new quizzes as its
+    ``missing?`` does. As in Canvas, a list naming one of the no-online types
+    alongside another type expects a submission.
+    """
+    if assignment.is_quiz_lti_assignment:
+        return True
+    types = list(assignment.submission_types or [])
+    return bool(types) and not (len(types) == 1 and types[0] in NO_ONLINE_SUBMISSION)
+
+
+def is_turned_in(submission: Any) -> bool:
+    """Return whether the student has turned in the assignment.
+
+    Work Canvas recorded a submission time for is turned in. So is work graded
+    without one, unless it was meant to be handed in online.
+    """
+    if submission.submitted_at is not None:
+        return True
+    return submission.workflow_state == "graded" and not expects_online_submission(
+        submission.assignment
+    )
+
+
+def is_missing(submission: Any) -> bool:
+    """Return whether the assignment is missing for the student.
+
+    Canvas's ``Submission#missing?`` without its grader check, so grading work
+    the student never turned in does not clear missing. Past due is Canvas's
+    ``seconds_late``, computed for the student's own due date.
+    """
+    if submission.excused:
+        return False
+    if submission.custom_grade_status_id is not None:
+        return False
+    if submission.late_policy_status:
+        return submission.late_policy_status == "missing"
+    if submission.submitted_at is not None:
+        return False
+    if not submission.seconds_late or submission.seconds_late <= 0:
+        return False
+    return expects_online_submission(submission.assignment)
+
+
 def build_item(
     submission: Any, course: Any, student: CanvasUser
 ) -> UnsubmittedAssignment:
@@ -146,13 +215,15 @@ def build_item(
         course_name=course.name or str(course.id),
         assignment_id=assignment.id,
         name=assignment.name,
-        due_at=_iso(assignment.due_at),
+        due_at=_parse_due(submission.cached_due_date),
         points_possible=assignment.points_possible,
         html_url=assignment.html_url,
         submission_types=list(assignment.submission_types or []),
         locked_for_user=bool(assignment.locked_for_user),
-        missing=bool(submission.missing),
+        missing=is_missing(submission),
         excused=bool(submission.excused),
+        graded=submission.workflow_state == "graded",
+        score=None if submission.score is None else float(submission.score),
     )
 
 
@@ -348,9 +419,11 @@ class CanvasClient:
     async def _async_course_items(
         self, course: Any, student: CanvasUser
     ) -> list[UnsubmittedAssignment] | None:
-        """Return a student's unsubmitted assignments in one course.
+        """Return the assignments a student has not turned in for one course.
 
-        Returns None when Canvas refuses the course.
+        Every submission is listed and classified here, since Canvas's states
+        alone cannot tell graded-but-never-turned-in work apart. Returns None
+        when Canvas refuses the course.
         """
         items: dict[int, UnsubmittedAssignment] = {}
         async with self._semaphore:
@@ -360,12 +433,15 @@ class CanvasClient:
                 ) in self._submissions.submissions_api_for_students_all(
                     course_id=str(course.id),
                     student_ids=[str(student.id)],
-                    workflow_state="unsubmitted",
                     include=["assignment"],
                     per_page=PAGE_SIZE,
                     _request_timeout=REQUEST_TIMEOUT,
                 ):
-                    if submission.assignment is None:
+                    if (
+                        submission.assignment is None
+                        or submission.workflow_state == "deleted"
+                        or is_turned_in(submission)
+                    ):
                         continue
                     item = build_item(submission, course, student)
                     items.setdefault(item.assignment_id, item)

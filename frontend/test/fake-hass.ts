@@ -28,6 +28,8 @@ export const assignment = (
   points_possible: 10,
   html_url: `https://canvas.example.edu/courses/101/assignments/${id}`,
   missing: false,
+  graded: false,
+  score: null,
   ...overrides,
 });
 

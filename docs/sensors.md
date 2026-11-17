@@ -43,7 +43,7 @@ missing_count: 2
 | `grading_period` | The title of the current grading period, or `null` if the course does not use grading periods. |
 | `start_at`, `end_at` | The course's start and end dates as ISO 8601 timestamps in UTC, or `null` if the course has none. |
 | `unsubmitted_count` | How many assignments the student has not turned in for this course. It equals the number of items the action returns for this student and course. |
-| `missing_count` | How many of those Canvas marks missing. |
+| `missing_count` | How many of those the integration marks missing, as described for the [action's `missing` field](actions.md#how-missing-is-decided). Work graded 0 without being turned in counts as missing. |
 
 `unsubmitted_count` and `missing_count` are `null`, not `0`, when [Canvas refused the course's assignments](known-limitations.md#courses-canvas-refuses-are-skipped) at the last refresh, so a skipped course is not shown as having nothing owed.
 

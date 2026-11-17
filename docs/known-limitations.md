@@ -12,6 +12,10 @@ This applies to students only. A student's course grade sensors are added and re
 
 Canvas sometimes refuses to list a single course, for example one outside its access dates, while the rest of the account works. The integration skips such a course for that refresh, so its assignments are not counted or returned. The course's grade sensor remains, with empty `unsubmitted_count` and `missing_count`, and the courses card shows no assignments for it. The skip is written to the log at debug level; turn on debug logging for the integration to see which course was skipped.
 
+## Online work handed in on paper stays listed
+
+If a student hands in an online assignment on paper and the teacher grades it without a submission in Canvas, Canvas has no submission time for it. The integration still lists it as not turned in and may mark it missing. Its `graded` and `score` fields in the [action's response](actions.md#response) let an automation leave it out.
+
 ## An account that observes students shows only those students
 
 If a Canvas account both observes other students and is enrolled as a student itself, the integration shows the observed students only. To see the account's own assignments as well, there is no setting; they are not available from that entry.

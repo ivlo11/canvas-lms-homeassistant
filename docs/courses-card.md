@@ -49,7 +49,7 @@ The list updates on its own when a refresh changes a grade or the student's cour
 
 ## A class's assignments
 
-Selecting a class shows that course's unsubmitted assignments for the student, with a back control to return to the list. Each assignment shows its name, its due date in your language and time zone, and its points possible. Assignments Canvas reports as missing are marked **Missing**. Selecting an assignment opens it in Canvas in a new tab.
+Selecting a class shows that course's unsubmitted assignments for the student, with a back control to return to the list. Each assignment shows its name, the student's own due date in your language and time zone, and its points possible. Assignments the integration marks as missing, including work graded 0 that the student never turned in, are marked **Missing**. See [how `missing` is decided](actions.md#how-missing-is-decided). Selecting an assignment opens it in Canvas in a new tab.
 
 A class with nothing owed shows *Nothing to turn in*.
 

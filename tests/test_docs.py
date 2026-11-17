@@ -65,7 +65,7 @@ async def test_example_templates(
     assert "Late" in online
     assert "Excused" not in online
     assert "Poster" not in online
-    assert missing == 2
+    assert missing == 1
     assert "Essay" in soon
     assert "Late" not in soon
     assert "Poster" not in soon

@@ -263,7 +263,16 @@ describe("class view", () => {
     expect(text(noDue.querySelector(".points"))).toBe("100 pts");
   });
 
-  it("marks an assignment Canvas reports as missing", async () => {
+  it("shows and marks missing work graded 0 without being turned in", async () => {
+    const graded = assignment(4, { name: "Unit test", due_at: "2026-11-02T12:00:00+00:00", missing: true, graded: true, score: 0 });
+    const card = await mount(fakeHass(FOUR, [...WORK, graded]));
+    await open(card, "Algebra");
+    const row = all(card, ".assignment").find((r) => text(r.querySelector(".name")) === "Unit test");
+    expect(row).toBeDefined();
+    expect(text(row!.querySelector(".missing"))).toBe("Missing");
+  });
+
+  it("marks an assignment the integration marks as missing", async () => {
     const card = await mount(fakeHass(FOUR, WORK));
     await open(card, "Algebra");
     const marked = all(card, ".assignment").filter((row) => row.querySelector(".missing"));
